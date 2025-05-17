@@ -1,5 +1,5 @@
 # Utilise l’image officielle Playwright (avec navigateurs déjà installés)
-FROM mcr.microsoft.com/playwright:v1.43.1-jammy
+FROM mcr.microsoft.com/playwright:v1.52.0-jammy
 
 # Crée le dossier de travail
 WORKDIR /app
