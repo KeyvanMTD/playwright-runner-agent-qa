@@ -1,17 +1,16 @@
-# Utilise l’image officielle Playwright (avec navigateurs déjà installés)
+# Dockerfile (version finale)
 FROM mcr.microsoft.com/playwright:v1.52.0-jammy
 
-# Crée le dossier de travail
 WORKDIR /app
+COPY package*.json ./
+RUN npm ci            # installe les deps sans toucher à playwright-core pré-installé
+# (« npm ci » ≃ « npm install » mais sans re-écrire package-lock)
 
-# Copie tous les fichiers dans le container
 COPY . .
 
-# Installe les dépendances
-RUN npm install
+# 🟢 S’assure que la copie locale de @playwright/test pointe sur les
+#    navigateurs fournis par l’image 👉 on ré-exécute install.
+RUN npx playwright install --with-deps
 
-# Expose le port (important pour Render)
 EXPOSE 3000
-
-# Commande de démarrage
 CMD ["node", "index.js"]
