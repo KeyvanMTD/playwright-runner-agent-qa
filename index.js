@@ -5,39 +5,38 @@ const path = require("path");
 const { exec } = require("child_process");
 
 const app = express();
-app.use(bodyParser.json());
-
 const PORT = 10000;
 
-app.post("/run", async (req, res) => {
-  const script = req.body.script;
+app.use(bodyParser.json({ limit: '1mb' }));
 
-  if (!script || typeof script !== "string") {
+app.post("/run", async (req, res) => {
+  const scriptContent = req.body.script;
+
+  if (!scriptContent) {
     return res.status(400).json({ error: "Missing script content" });
   }
 
-  const tempFilePath = path.join(__dirname, "scripts", "temp.spec.ts");
+  const scriptPath = path.join(__dirname, "scripts", "temp.spec.ts");
+  fs.writeFileSync(scriptPath, scriptContent, "utf8");
 
-  try {
-    // Écrit le script dans un fichier temporaire TypeScript
-    fs.writeFileSync(tempFilePath, script, "utf-8");
+  const command = `npx playwright test ${scriptPath} --timeout=30000`;
 
-    const command = `npx playwright test /app/scripts/temp.spec.ts --timeout=30000`;
-
-    exec(command, (error, stdout, stderr) => {
-      const response = {
-        success: !error,
+  exec(command, (error, stdout, stderr) => {
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        error: error.message,
+        stderr,
         stdout,
-        stderr: stderr || null,
-        error: error ? error.message : null,
-        script,
-      };
+      });
+    }
 
-      return res.json(response);
+    res.json({
+      success: true,
+      stdout,
+      stderr,
     });
-  } catch (err) {
-    return res.status(500).json({ error: err.message });
-  }
+  });
 });
 
 app.listen(PORT, () => {
