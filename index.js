@@ -7,7 +7,7 @@ const { exec } = require("child_process");
 const app = express();
 const PORT = 10000;
 
-app.use(bodyParser.json({ limit: '1mb' }));
+app.use(bodyParser.json({ limit: "1mb" }));
 
 app.post("/run", async (req, res) => {
   const scriptContent = req.body.script;
@@ -16,7 +16,13 @@ app.post("/run", async (req, res) => {
     return res.status(400).json({ error: "Missing script content" });
   }
 
-  const scriptPath = path.join(__dirname, "scripts", "temp.spec.ts");
+  const scriptsDir = path.join(__dirname, "scripts");
+  const scriptPath = path.join(scriptsDir, "temp.spec.ts");
+
+  // Assure que le dossier scripts existe
+  fs.mkdirSync(scriptsDir, { recursive: true });
+
+  // Écrit le fichier .spec.ts
   fs.writeFileSync(scriptPath, scriptContent, "utf8");
 
   const command = `npx playwright test ${scriptPath} --timeout=30000`;
