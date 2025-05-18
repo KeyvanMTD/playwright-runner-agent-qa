@@ -5,7 +5,7 @@ const path = require("path");
 const { exec } = require("child_process");
 
 const app = express();
-app.use(bodyParser.json());
+app.use(bodyParser.json({ limit: "2mb" }));
 
 const PORT = process.env.PORT || 3000;
 const SCRIPT_DIR = path.join(__dirname, "scripts");
@@ -17,27 +17,28 @@ if (!fs.existsSync(SCRIPT_DIR)) {
 }
 
 app.post("/run", (req, res) => {
-  const { script } = req.body;
-  if (!script) {
-    return res.status(400).json({ error: "Missing script content" });
+  const { script_b64 } = req.body;
+
+  if (!script_b64) {
+    return res.status(400).json({ error: "Missing script_b64 in request body" });
   }
 
-  /* --- 1. Transformation minimale TS → JS (imports / exports / types) --- */
-  const transformedScript = script
+  // Décodage base64 → UTF-8
+  const decodedScript = Buffer.from(script_b64, "base64").toString("utf-8");
+
+  // 🔁 Transformation TS > JS (ESM to CommonJS)
+  const transformedScript = decodedScript
     .replace(/import\s+{([^}]+)}\s+from\s+['"]@playwright\/test['"]/g,
-             "const { $1 } = require('@playwright/test')")   // ESM → CJS
-    .replace(/: [^=;]+/g, "")                                 // supprime les types
-    .replace(/export\s+{};/g, "");                            // supprime "export {}"
+             "const { $1 } = require('@playwright/test')") // ESM → CJS
+    .replace(/: [^=;]+/g, "")                             // Types TS
+    .replace(/export\s+{};/g, "");                        // export {}
 
   fs.writeFileSync(SCRIPT_PATH, transformedScript, "utf-8");
 
-  /* --- 2. Exécution Playwright --- */
   const CMD = `npx playwright test ${SCRIPT_PATH} --timeout=30000`;
 
   exec(CMD, { env: { ...process.env, PW_TEST_DISABLE_SANDBOX: "1" } },
     (err, stdout, stderr) => {
-
-      // 👉 Logs détaillés dans Render (Events > Live tail)
       console.log("----- CMD ----->", CMD);
       console.log("----- STDOUT ---\n", stdout);
       console.log("----- STDERR ---\n", stderr);
@@ -48,6 +49,7 @@ app.post("/run", (req, res) => {
         stdout,
         stderr,
         error: err ? err.message : null,
+        script: decodedScript // pour debugging si besoin
       });
     });
 });
