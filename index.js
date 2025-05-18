@@ -5,7 +5,7 @@ const path = require("path");
 const { exec } = require("child_process");
 
 const app = express();
-app.use(bodyParser.json({ limit: '1mb' })); // accepte des scripts larges
+app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 const SCRIPT_DIR = path.join(__dirname, "scripts");
@@ -17,42 +17,38 @@ if (!fs.existsSync(SCRIPT_DIR)) {
 }
 
 app.post("/run", (req, res) => {
-  const rawB64 = req.body.script_b64;
-
-  if (!rawB64) {
-    return res.status(400).json({ error: "Missing script content (base64)" });
+  const { script } = req.body;
+  if (!script) {
+    return res.status(400).json({ error: "Missing script content" });
   }
 
-  // Décodage du script depuis base64
-  let decodedScript = Buffer.from(rawB64, "base64").toString("utf-8");
-
-  // Nettoyage minimal : remove ```ts ou ```typescript si encore présents
-  decodedScript = decodedScript.replace(/```[a-z]*\n?/g, "").trim();
-
-  // Conversion TS → JS light
-  const transformedScript = decodedScript
+  // Remplacement rapide TS → JS (import, types, export {})
+  const transformedScript = script
     .replace(/import\s+{([^}]+)}\s+from\s+['"]@playwright\/test['"]/g,
              "const { $1 } = require('@playwright/test')")
-    .replace(/: [^=;]+/g, "") // supprime les types TypeScript
-    .replace(/export\s+{};/g, "");
+    .replace(/: [^=;]+/g, "") // Supprime les types TypeScript
+    .replace(/export\s+{};/g, ""); // Supprime les exports vides
 
+  // Sauvegarde le fichier
   fs.writeFileSync(SCRIPT_PATH, transformedScript, "utf-8");
 
+  // Commande Playwright
   const CMD = `npx playwright test ${SCRIPT_PATH} --timeout=30000`;
 
-  exec(CMD, { env: { ...process.env, PW_TEST_DISABLE_SANDBOX: "1" } }, (err, stdout, stderr) => {
-    console.log("----- CMD -----\n", CMD);
-    console.log("----- STDOUT ---\n", stdout);
-    console.log("----- STDERR ---\n", stderr);
-    if (err) console.error("----- ERROR ----\n", err);
+  exec(CMD, { env: { ...process.env, PW_TEST_DISABLE_SANDBOX: "1" } },
+    (err, stdout, stderr) => {
+      console.log("----- CMD ----->", CMD);
+      console.log("----- STDOUT ---\n", stdout);
+      console.log("----- STDERR ---\n", stderr);
+      if (err) console.error("----- ERROR ----\n", err);
 
-    res.json({
-      success: !err,
-      stdout,
-      stderr,
-      error: err ? err.message : null,
+      res.json({
+        success: !err,
+        stdout,
+        stderr,
+        error: err ? err.message : null,
+      });
     });
-  });
 });
 
 app.listen(PORT, () => {
