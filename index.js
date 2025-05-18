@@ -11,36 +11,43 @@ const PORT = process.env.PORT || 3000;
 const SCRIPT_DIR = path.join(__dirname, "scripts");
 const SCRIPT_PATH = path.join(SCRIPT_DIR, "temp.spec.js");
 
-// Crée le dossier scripts s'il n'existe pas
+// Crée le dossier scripts si non existant
 if (!fs.existsSync(SCRIPT_DIR)) {
   fs.mkdirSync(SCRIPT_DIR);
 }
 
 app.post("/run", (req, res) => {
-  const { script_b64 } = req.body;
-  if (!script_b64) {
-    return res.status(400).json({ error: "Missing script_b64 in body" });
+  const { script: scriptB64 } = req.body;
+  if (!scriptB64) {
+    return res.status(400).json({ error: "Missing script content (base64)" });
   }
 
-  // 1. Décodage Base64
-  const decodedScript = Buffer.from(script_b64, "base64").toString("utf-8");
+  // 1. Décodage du script (depuis base64)
+  let decodedScript = Buffer.from(scriptB64, "base64").toString("utf-8");
 
-  // 2. Transformation TypeScript → JavaScript basique
+  // 2. Nettoyage Markdown : supprime les ```ts ou ```typescript
+  decodedScript = decodedScript
+    .replace(/```(typescript|ts)?/g, "")
+    .replace(/```/g, "");
+
+  // 3. Transformations légères pour JS
   const transformedScript = decodedScript
-    .replace(/import\s+{([^}]+)}\s+from\s+['"]@playwright\/test['"]/g, "const { $1 } = require('@playwright/test')") // ESM → CJS
-    .replace(/: [^=;]+/g, "")                         // supprime les types TS
-    .replace(/export\s+{};/g, "")                     // supprime export {}
-    .replace(/`([^`]+)\${([^}]+)}([^`]*)`/g, "'$1' + $2 + '$3'"); // ⚠️ convertit les template literals `${}` en concaténation JS
+    .replace(/import\s+{([^}]+)}\s+from\s+['"]@playwright\/test['"]/g,
+             "const { $1 } = require('@playwright/test')") // ESM → CJS
+    .replace(/: [^=;]+/g, "")                             // Types TypeScript
+    .replace(/export\s+{};/g, "")                         // Nettoyage inutile
+    .replace(/\$\{([^}]+)\}/g, '"+$1+"');                 // Interpolation `${}` vers concat
 
+  // 4. Écriture du script dans un fichier JS
   fs.writeFileSync(SCRIPT_PATH, transformedScript, "utf-8");
 
-  // 3. Exécution Playwright
+  // 5. Exécution Playwright
   const CMD = `npx playwright test ${SCRIPT_PATH} --timeout=30000`;
 
   exec(CMD, { env: { ...process.env, PW_TEST_DISABLE_SANDBOX: "1" } }, (err, stdout, stderr) => {
-    console.log("----- CMD ----->", CMD);
-    console.log("----- STDOUT ---\n", stdout);
-    console.log("----- STDERR ---\n", stderr);
+    console.log("----- CMD -----", CMD);
+    console.log("----- STDOUT --\n", stdout);
+    console.log("----- STDERR --\n", stderr);
     if (err) console.error("----- ERROR ----\n", err);
 
     res.json({
@@ -54,5 +61,5 @@ app.post("/run", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Playwright Runner prêt sur http://localhost:${PORT}`);
+  console.log(`✅ QA Runner démarré sur http://localhost:${PORT}`);
 });
