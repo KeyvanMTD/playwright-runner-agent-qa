@@ -7,50 +7,39 @@ const { exec } = require("child_process");
 const app = express();
 app.use(bodyParser.json());
 
-const PORT = process.env.PORT || 3000;
-const SCRIPT_DIR = path.join(__dirname, "scripts");
-const SCRIPT_PATH = path.join(SCRIPT_DIR, "temp.spec.js");
+const PORT = 10000;
 
-// Crée le dossier scripts s’il n'existe pas
-if (!fs.existsSync(SCRIPT_DIR)) {
-  fs.mkdirSync(SCRIPT_DIR);
-}
+app.post("/run", async (req, res) => {
+  const script = req.body.script;
 
-app.post("/run", (req, res) => {
-  const { script } = req.body;
-  if (!script) {
+  if (!script || typeof script !== "string") {
     return res.status(400).json({ error: "Missing script content" });
   }
 
-  // Remplacement rapide TS → JS (import, types, export {})
-  const transformedScript = script
-    .replace(/import\s+{([^}]+)}\s+from\s+['"]@playwright\/test['"]/g,
-             "const { $1 } = require('@playwright/test')")
-    .replace(/: [^=;]+/g, "") // Supprime les types TypeScript
-    .replace(/export\s+{};/g, ""); // Supprime les exports vides
+  const tempFilePath = path.join(__dirname, "scripts", "temp.spec.ts");
 
-  // Sauvegarde le fichier
-  fs.writeFileSync(SCRIPT_PATH, transformedScript, "utf-8");
+  try {
+    // Écrit le script dans un fichier temporaire TypeScript
+    fs.writeFileSync(tempFilePath, script, "utf-8");
 
-  // Commande Playwright
-  const CMD = `npx playwright test ${SCRIPT_PATH} --timeout=30000`;
+    const command = `npx playwright test /app/scripts/temp.spec.ts --timeout=30000`;
 
-  exec(CMD, { env: { ...process.env, PW_TEST_DISABLE_SANDBOX: "1" } },
-    (err, stdout, stderr) => {
-      console.log("----- CMD ----->", CMD);
-      console.log("----- STDOUT ---\n", stdout);
-      console.log("----- STDERR ---\n", stderr);
-      if (err) console.error("----- ERROR ----\n", err);
-
-      res.json({
-        success: !err,
+    exec(command, (error, stdout, stderr) => {
+      const response = {
+        success: !error,
         stdout,
-        stderr,
-        error: err ? err.message : null,
-      });
+        stderr: stderr || null,
+        error: error ? error.message : null,
+        script,
+      };
+
+      return res.json(response);
     });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => {
-  console.log(`✅ Playwright Runner prêt sur http://localhost:${PORT}`);
+  console.log(`✅ QA Runner Server démarré sur http://localhost:${PORT}`);
 });
